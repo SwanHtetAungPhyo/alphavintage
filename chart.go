@@ -565,3 +565,147 @@ func GenerateCashFlowChartToFile(data *CashFlowResponse, filename string, opts C
 	defer f.Close()
 	return GenerateCashFlowChart(data, f, opts)
 }
+
+
+// GenerateFDPriceChart creates a price chart from Financial Datasets price data
+func GenerateFDPriceChart(prices []FDPrice, output io.Writer, opts ChartOptions) error {
+	if len(prices) == 0 {
+		return fmt.Errorf("no price data")
+	}
+
+	if opts.Width == 0 {
+		opts.Width = 1200
+	}
+	if opts.Height == 0 {
+		opts.Height = 600
+	}
+
+	var dates []time.Time
+	var closes, volumes []float64
+
+	for _, p := range prices {
+		t, err := time.Parse("2006-01-02", p.Time[:10])
+		if err != nil {
+			continue
+		}
+		dates = append(dates, t)
+		closes = append(closes, p.Close)
+		volumes = append(volumes, float64(p.Volume))
+	}
+
+	priceSeries := chart.TimeSeries{
+		Name: "Close Price",
+		Style: chart.Style{
+			StrokeColor: chart.ColorBlue,
+			StrokeWidth: 2,
+		},
+		XValues: dates,
+		YValues: closes,
+	}
+
+	graph := chart.Chart{
+		Title:      opts.Title,
+		TitleStyle: chart.Style{FontSize: 14},
+		Width:      opts.Width,
+		Height:     opts.Height,
+		XAxis: chart.XAxis{
+			Name:           "Date",
+			ValueFormatter: chart.TimeDateValueFormatter,
+		},
+		YAxis: chart.YAxis{
+			Name: "Price ($)",
+			ValueFormatter: func(v interface{}) string {
+				return fmt.Sprintf("$%.2f", v.(float64))
+			},
+		},
+		Series: []chart.Series{priceSeries},
+	}
+
+	if opts.ShowVolume && len(volumes) > 0 {
+		graph.YAxisSecondary = chart.YAxis{
+			Name: "Volume",
+			ValueFormatter: func(v interface{}) string {
+				return formatVolume(v.(float64))
+			},
+		}
+		volumeSeries := chart.TimeSeries{
+			Name:    "Volume",
+			YAxis:   chart.YAxisSecondary,
+			XValues: dates,
+			YValues: volumes,
+			Style: chart.Style{
+				StrokeColor: drawing.ColorFromHex("90EE90"),
+				FillColor:   drawing.ColorFromHex("90EE90").WithAlpha(100),
+				StrokeWidth: 0,
+			},
+		}
+		graph.Series = append(graph.Series, volumeSeries)
+	}
+
+	graph.Elements = []chart.Renderable{chart.Legend(&graph)}
+	return graph.Render(chart.PNG, output)
+}
+
+// GenerateFDPriceChartToFile saves FD price chart to file
+func GenerateFDPriceChartToFile(prices []FDPrice, filename string, opts ChartOptions) error {
+	f, err := os.Create(filename)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	return GenerateFDPriceChart(prices, f, opts)
+}
+
+// GenerateFDRevenueChart creates revenue trend chart
+func GenerateFDRevenueChart(statements []FDIncomeStatement, output io.Writer, opts ChartOptions) error {
+	if len(statements) == 0 {
+		return fmt.Errorf("no income statement data")
+	}
+
+	if opts.Width == 0 {
+		opts.Width = 800
+	}
+	if opts.Height == 0 {
+		opts.Height = 400
+	}
+
+	var bars []chart.Value
+	for i := len(statements) - 1; i >= 0; i-- {
+		s := statements[i]
+		bars = append(bars, chart.Value{
+			Label: s.ReportPeriod[:7],
+			Value: s.Revenue / 1e9,
+		})
+	}
+
+	if len(bars) > 10 {
+		bars = bars[len(bars)-10:]
+	}
+
+	graph := chart.BarChart{
+		Title:      opts.Title,
+		TitleStyle: chart.Style{FontSize: 14},
+		Width:      opts.Width,
+		Height:     opts.Height,
+		BarWidth:   40,
+		YAxis: chart.YAxis{
+			Name: "Revenue ($B)",
+			ValueFormatter: func(v interface{}) string {
+				return fmt.Sprintf("$%.1fB", v.(float64))
+			},
+		},
+		Bars: bars,
+	}
+
+	return graph.Render(chart.PNG, output)
+}
+
+// GenerateFDRevenueChartToFile saves revenue chart to file
+func GenerateFDRevenueChartToFile(statements []FDIncomeStatement, filename string, opts ChartOptions) error {
+	f, err := os.Create(filename)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	return GenerateFDRevenueChart(statements, f, opts)
+}
