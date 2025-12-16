@@ -12,122 +12,151 @@ import (
 func main() {
 	apiKey := os.Getenv("ALPHA_VANTAGE_API_KEY")
 	if apiKey == "" {
-		apiKey = "UPS6QRH073V81U5Z" // fallback
+		apiKey = "UPS6QRH073V81U5Z"
 	}
 	client := alphavintage.NewClient(apiKey)
 
-	// Get market status
-	fmt.Println("=== Market Status ===")
-	status, err := client.GetMarketStatus()
-	if err != nil {
-		log.Printf("Market status error: %v", err)
-	} else {
-		for _, m := range status.Markets {
-			fmt.Printf("%s (%s): %s\n", m.Region, m.MarketType, m.CurrentStatus)
-		}
-	}
+	symbol := "IBM"
 
-	time.Sleep(12 * time.Second) // Rate limit: 5 calls/min for free tier
+	// Fetch all data
+	fmt.Printf("Fetching data for %s...\n", symbol)
 
-	// Get daily time series
-	fmt.Println("\n=== Daily Time Series (IBM) ===")
-	daily, err := client.GetTimeSeriesDaily("IBM", alphavintage.OutputSizeCompact)
+	daily, err := client.GetTimeSeriesDaily(symbol, alphavintage.OutputSizeCompact)
 	if err != nil {
 		log.Printf("Daily series error: %v", err)
 	} else {
-		fmt.Printf("Symbol: %s, Last Refreshed: %s\n", daily.MetaData.Symbol, daily.MetaData.LastRefreshed)
-		count := 0
-		for date, data := range daily.TimeSeries {
-			if count >= 3 {
-				break
-			}
-			fmt.Printf("  %s: Open=%s, Close=%s, Volume=%s\n", date, data.Open, data.Close, data.Volume)
-			count++
-		}
+		fmt.Printf("✓ Daily data: %d points\n", len(daily.TimeSeries))
 	}
 
 	time.Sleep(12 * time.Second)
 
-	// Get intraday time series
-	fmt.Println("\n=== Intraday Time Series (IBM, 5min) ===")
-	intraday, err := client.GetTimeSeriesIntraday("IBM", alphavintage.Interval5Min, alphavintage.OutputSizeCompact)
-	if err != nil {
-		log.Printf("Intraday series error: %v", err)
-	} else {
-		fmt.Printf("Symbol: %s, Interval: %s\n", intraday.MetaData.Symbol, intraday.MetaData.Interval)
-		count := 0
-		for ts, data := range intraday.TimeSeries {
-			if count >= 3 {
-				break
-			}
-			fmt.Printf("  %s: Open=%s, Close=%s\n", ts, data.Open, data.Close)
-			count++
-		}
-	}
-
-	time.Sleep(12 * time.Second)
-
-	// Get balance sheet
-	fmt.Println("\n=== Balance Sheet (IBM) ===")
-	balance, err := client.GetBalanceSheet("IBM")
-	if err != nil {
-		log.Printf("Balance sheet error: %v", err)
-	} else if len(balance.AnnualReports) > 0 {
-		report := balance.AnnualReports[0]
-		fmt.Printf("Fiscal Date: %s\n", report.FiscalDateEnding)
-		fmt.Printf("Total Assets: %s\n", report.TotalAssets)
-		fmt.Printf("Total Liabilities: %s\n", report.TotalLiabilities)
-	}
-
-	time.Sleep(12 * time.Second)
-
-	// Get cash flow
-	fmt.Println("\n=== Cash Flow (IBM) ===")
-	cashflow, err := client.GetCashFlow("IBM")
-	if err != nil {
-		log.Printf("Cash flow error: %v", err)
-	} else if len(cashflow.AnnualReports) > 0 {
-		report := cashflow.AnnualReports[0]
-		fmt.Printf("Fiscal Date: %s\n", report.FiscalDateEnding)
-		fmt.Printf("Operating Cashflow: %s\n", report.OperatingCashflow)
-		fmt.Printf("Net Income: %s\n", report.NetIncome)
-	}
-
-	time.Sleep(12 * time.Second)
-
-	// Get earnings
-	fmt.Println("\n=== Earnings (IBM) ===")
-	earnings, err := client.GetEarnings("IBM")
+	earnings, err := client.GetEarnings(symbol)
 	if err != nil {
 		log.Printf("Earnings error: %v", err)
-	} else if len(earnings.AnnualEarnings) > 0 {
-		for i, e := range earnings.AnnualEarnings {
-			if i >= 3 {
-				break
-			}
-			fmt.Printf("  %s: EPS=%s\n", e.FiscalDateEnding, e.ReportedEPS)
-		}
+	} else {
+		fmt.Printf("✓ Earnings: %d annual records\n", len(earnings.AnnualEarnings))
 	}
 
 	time.Sleep(12 * time.Second)
 
-	// Get news sentiment
-	fmt.Println("\n=== News Sentiment (AAPL) ===")
-	news, err := client.GetNewsSentiment(&alphavintage.NewsSentimentOptions{
-		Tickers: "AAPL",
-	})
+	cashflow, err := client.GetCashFlow(symbol)
 	if err != nil {
-		log.Printf("News sentiment error: %v", err)
-	} else if len(news.Feed) > 0 {
-		for i, item := range news.Feed {
-			if i >= 3 {
-				break
-			}
-			title := item.Title
-			if len(title) > 60 {
-				title = title[:60]
-			}
-			fmt.Printf("  %s (Sentiment: %s)\n", title, item.OverallSentimentLabel)
-		}
+		log.Printf("Cash flow error: %v", err)
+	} else {
+		fmt.Printf("✓ Cash flow: %d annual records\n", len(cashflow.AnnualReports))
 	}
+
+	time.Sleep(12 * time.Second)
+
+	balance, err := client.GetBalanceSheet(symbol)
+	if err != nil {
+		log.Printf("Balance sheet error: %v", err)
+	} else {
+		fmt.Printf("✓ Balance sheet: %d annual records\n", len(balance.AnnualReports))
+	}
+
+	time.Sleep(12 * time.Second)
+
+	market, err := client.GetMarketStatus()
+	if err != nil {
+		log.Printf("Market status error: %v", err)
+	} else {
+		fmt.Printf("✓ Market status: %d markets\n", len(market.Markets))
+	}
+
+	// Create PDF Report
+	fmt.Println("\nGenerating PDF report...")
+
+	opts := alphavintage.DefaultReportOptions()
+	opts.Title = fmt.Sprintf("%s Stock Analysis Report", symbol)
+	opts.Author = "Alpha Vantage Go Client"
+
+	report := alphavintage.NewReportBuilder(opts)
+	report.AddPageNumbers()
+
+	// Cover page
+	report.AddPage()
+	report.AddLineBreak(40)
+	report.AddTitle(fmt.Sprintf("%s Stock Analysis", symbol))
+	report.AddLineBreak(10)
+	report.AddSubtitle("Comprehensive Financial Report")
+	report.AddLineBreak(20)
+	report.AddTimestamp()
+	report.AddLineBreak(10)
+	report.AddText("This report provides a comprehensive analysis of the stock including price trends, earnings history, cash flow analysis, and balance sheet summary.")
+
+	// Price Analysis Page
+	report.AddPage()
+	report.AddHeading("Price Analysis")
+	report.AddText(fmt.Sprintf("The following chart shows the daily closing prices for %s over the recent trading period.", symbol))
+	report.AddLineBreak(5)
+
+	chartOpts := alphavintage.ChartOptions{
+		Title:      fmt.Sprintf("%s Daily Price", symbol),
+		Width:      800,
+		Height:     400,
+		ShowVolume: true,
+	}
+	report.AddDailyPriceChart(daily, chartOpts)
+
+	report.AddLineBreak(5)
+	report.AddHeading("Price Range Analysis")
+	chartOpts.Title = fmt.Sprintf("%s High/Low/Close", symbol)
+	report.AddCandlestickChart(daily, chartOpts)
+
+	// Earnings Page
+	report.AddPage()
+	report.AddHeading("Earnings Analysis")
+	report.AddText("Annual earnings per share (EPS) provides insight into the company's profitability over time.")
+	report.AddLineBreak(5)
+
+	chartOpts.Title = fmt.Sprintf("%s Annual EPS", symbol)
+	chartOpts.Width = 700
+	chartOpts.Height = 350
+	report.AddEarningsChart(earnings, chartOpts)
+
+	report.AddLineBreak(5)
+	report.AddEarningsSummary(earnings, 5)
+
+	// Cash Flow Page
+	report.AddPage()
+	report.AddHeading("Cash Flow Analysis")
+	report.AddText("Cash flow analysis shows how the company generates and uses cash across operating, investing, and financing activities.")
+	report.AddLineBreak(5)
+
+	chartOpts.Title = fmt.Sprintf("%s Cash Flow Trends", symbol)
+	report.AddCashFlowChart(cashflow, chartOpts)
+
+	report.AddLineBreak(5)
+	report.AddCashFlowSummary(cashflow)
+
+	// Balance Sheet Page
+	report.AddPage()
+	report.AddHeading("Balance Sheet Summary")
+	report.AddText("The balance sheet provides a snapshot of the company's financial position at a specific point in time.")
+	report.AddLineBreak(5)
+	report.AddBalanceSheetSummary(balance)
+
+	// Market Status Page
+	report.AddPage()
+	report.AddHeading("Global Market Status")
+	report.AddText("Current status of major global markets.")
+	report.AddLineBreak(5)
+	report.AddMarketStatusSummary(market)
+
+	// Disclaimer Page
+	report.AddPage()
+	report.AddHeading("Disclaimer")
+	report.AddItalicText("This report is generated automatically using data from Alpha Vantage API. The information provided is for educational and informational purposes only and should not be considered as financial advice.")
+	report.AddLineBreak(5)
+	report.AddText("Past performance is not indicative of future results. Always conduct your own research and consult with a qualified financial advisor before making investment decisions.")
+
+	// Save the report
+	filename := fmt.Sprintf("%s_report.pdf", symbol)
+	err = report.Save(filename)
+	if err != nil {
+		log.Fatalf("Failed to save PDF: %v", err)
+	}
+
+	fmt.Printf("\n✓ Report saved: %s\n", filename)
 }
