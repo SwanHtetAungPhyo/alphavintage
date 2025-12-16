@@ -558,6 +558,73 @@ func (rb *ReportBuilder) AddCashFlowChart(data *CashFlowResponse, opts ChartOpti
 	return rb
 }
 
+// AddIntradayChart generates and adds an intraday chart
+func (rb *ReportBuilder) AddIntradayChart(data *TimeSeriesIntradayResponse, opts ChartOptions) *ReportBuilder {
+	if data == nil || len(data.TimeSeries) == 0 {
+		return rb
+	}
+	if opts.Width == 0 {
+		opts.Width = 1000
+	}
+	if opts.Height == 0 {
+		opts.Height = 500
+	}
+
+	var buf bytes.Buffer
+	if err := GenerateIntradayChart(data, &buf, opts); err != nil {
+		rb.AddText(fmt.Sprintf("Error generating chart: %v", err))
+		return rb
+	}
+
+	imgWidth := rb.contentWidth()
+	imgHeight := imgWidth * float64(opts.Height) / float64(opts.Width)
+	rb.addChartImage(buf.Bytes(), "intraday", imgWidth, imgHeight)
+	return rb
+}
+
+// AddIntradaySummary adds intraday summary statistics
+func (rb *ReportBuilder) AddIntradaySummary(summary *IntradaySummary) *ReportBuilder {
+	if summary == nil {
+		return rb
+	}
+	rb.AddKeyValue("Symbol", summary.Symbol)
+	rb.AddKeyValue("Date", summary.Date)
+	rb.AddKeyValue("Interval", summary.Interval)
+	rb.AddKeyValue("Open", fmt.Sprintf("$%.2f", summary.Open))
+	rb.AddKeyValue("High", fmt.Sprintf("$%.2f", summary.High))
+	rb.AddKeyValue("Low", fmt.Sprintf("$%.2f", summary.Low))
+	rb.AddKeyValue("Close", fmt.Sprintf("$%.2f", summary.Close))
+	rb.AddKeyValue("Total Volume", formatVolume(float64(summary.TotalVol)))
+	rb.AddKeyValue("Data Points", fmt.Sprintf("%d", summary.DataPoints))
+	rb.pdf.Ln(5)
+	return rb
+}
+
+// AddDailyRangeSummary adds date range summary statistics
+func (rb *ReportBuilder) AddDailyRangeSummary(summary *DailyRangeSummary) *ReportBuilder {
+	if summary == nil {
+		return rb
+	}
+	rb.AddKeyValue("Symbol", summary.Symbol)
+	rb.AddKeyValue("Period", fmt.Sprintf("%s to %s", summary.StartDate, summary.EndDate))
+	rb.AddKeyValue("Trading Days", fmt.Sprintf("%d", summary.TradingDays))
+	rb.AddLineBreak(3)
+	rb.AddKeyValue("Period Open", fmt.Sprintf("$%.2f", summary.PeriodOpen))
+	rb.AddKeyValue("Period High", fmt.Sprintf("$%.2f (%s)", summary.PeriodHigh, summary.HighDate))
+	rb.AddKeyValue("Period Low", fmt.Sprintf("$%.2f (%s)", summary.PeriodLow, summary.LowDate))
+	rb.AddKeyValue("Period Close", fmt.Sprintf("$%.2f", summary.PeriodClose))
+	rb.AddLineBreak(3)
+	sign := ""
+	if summary.PriceChange >= 0 {
+		sign = "+"
+	}
+	rb.AddKeyValue("Price Change", fmt.Sprintf("%s$%.2f (%s%.2f%%)", sign, summary.PriceChange, sign, summary.PriceChangePct))
+	rb.AddKeyValue("Total Volume", formatVolume(float64(summary.TotalVolume)))
+	rb.AddKeyValue("Avg Daily Volume", formatVolume(float64(summary.AvgVolume)))
+	rb.pdf.Ln(5)
+	return rb
+}
+
 // AddComparisonChart generates and adds a comparison chart
 func (rb *ReportBuilder) AddComparisonChart(datasets map[string]*TimeSeriesDailyResponse, opts ChartOptions) *ReportBuilder {
 	if len(datasets) == 0 {

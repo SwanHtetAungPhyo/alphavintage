@@ -567,6 +567,120 @@ func GenerateCashFlowChartToFile(data *CashFlowResponse, filename string, opts C
 }
 
 
+// GenerateIntradayChart creates a chart from intraday data (single day)
+func GenerateIntradayChart(data *TimeSeriesIntradayResponse, output io.Writer, opts ChartOptions) error {
+	if data == nil || len(data.TimeSeries) == 0 {
+		return fmt.Errorf("no intraday data to chart")
+	}
+
+	if opts.Width == 0 {
+		opts.Width = 1200
+	}
+	if opts.Height == 0 {
+		opts.Height = 600
+	}
+	if opts.Title == "" {
+		opts.Title = fmt.Sprintf("%s Intraday (%s)", data.MetaData.Symbol, data.MetaData.Interval)
+	}
+
+	// Extract and sort data
+	type dataPoint struct {
+		time   time.Time
+		close  float64
+		volume float64
+	}
+
+	var points []dataPoint
+	for timestamp, dp := range data.TimeSeries {
+		t, err := time.Parse("2006-01-02 15:04:05", timestamp)
+		if err != nil {
+			continue
+		}
+		close, _ := strconv.ParseFloat(dp.Close, 64)
+		vol, _ := strconv.ParseFloat(dp.Volume, 64)
+		points = append(points, dataPoint{t, close, vol})
+	}
+
+	sort.Slice(points, func(i, j int) bool {
+		return points[i].time.Before(points[j].time)
+	})
+
+	var times []time.Time
+	var closes, volumes []float64
+	for _, p := range points {
+		times = append(times, p.time)
+		closes = append(closes, p.close)
+		volumes = append(volumes, p.volume)
+	}
+
+	priceSeries := chart.TimeSeries{
+		Name: "Price",
+		Style: chart.Style{
+			StrokeColor: chart.ColorBlue,
+			StrokeWidth: 2,
+		},
+		XValues: times,
+		YValues: closes,
+	}
+
+	graph := chart.Chart{
+		Title:      opts.Title,
+		TitleStyle: chart.Style{FontSize: 14},
+		Width:      opts.Width,
+		Height:     opts.Height,
+		XAxis: chart.XAxis{
+			Name: "Time",
+			ValueFormatter: func(v interface{}) string {
+				if typed, ok := v.(float64); ok {
+					return time.Unix(0, int64(typed)).Format("15:04")
+				}
+				return ""
+			},
+		},
+		YAxis: chart.YAxis{
+			Name: "Price ($)",
+			ValueFormatter: func(v interface{}) string {
+				return fmt.Sprintf("$%.2f", v.(float64))
+			},
+		},
+		Series: []chart.Series{priceSeries},
+	}
+
+	if opts.ShowVolume && len(volumes) > 0 {
+		graph.YAxisSecondary = chart.YAxis{
+			Name: "Volume",
+			ValueFormatter: func(v interface{}) string {
+				return formatVolume(v.(float64))
+			},
+		}
+		volumeSeries := chart.TimeSeries{
+			Name:    "Volume",
+			YAxis:   chart.YAxisSecondary,
+			XValues: times,
+			YValues: volumes,
+			Style: chart.Style{
+				StrokeColor: drawing.ColorFromHex("90EE90"),
+				FillColor:   drawing.ColorFromHex("90EE90").WithAlpha(100),
+				StrokeWidth: 0,
+			},
+		}
+		graph.Series = append(graph.Series, volumeSeries)
+	}
+
+	graph.Elements = []chart.Renderable{chart.Legend(&graph)}
+	return graph.Render(chart.PNG, output)
+}
+
+// GenerateIntradayChartToFile saves intraday chart to PNG file
+func GenerateIntradayChartToFile(data *TimeSeriesIntradayResponse, filename string, opts ChartOptions) error {
+	f, err := os.Create(filename)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	return GenerateIntradayChart(data, f, opts)
+}
+
 // GenerateFDPriceChart creates a price chart from Financial Datasets price data
 func GenerateFDPriceChart(prices []FDPrice, output io.Writer, opts ChartOptions) error {
 	if len(prices) == 0 {

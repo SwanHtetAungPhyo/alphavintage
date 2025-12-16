@@ -30,11 +30,105 @@ report.Save("report.pdf")
 |----------|-------------|
 | `GetMarketStatus()` | Global market status |
 | `GetTimeSeriesDaily(symbol, outputSize)` | Daily OHLCV |
-| `GetTimeSeriesIntraday(symbol, interval, outputSize)` | Intraday (premium) |
+| `GetTimeSeriesIntraday(symbol, interval, outputSize)` | Intraday data |
+| `GetSingleDayData(symbol, date, interval)` | Single day intraday |
+| `GetDailyDataForDate(symbol, date)` | Single day from daily |
 | `GetBalanceSheet(symbol)` | Balance sheet |
 | `GetCashFlow(symbol)` | Cash flow |
 | `GetEarnings(symbol)` | Earnings |
 | `GetNewsSentiment(options)` | News sentiment |
+
+## Single Day / Intraday Analysis
+
+Analyze trading activity for a specific day:
+
+```go
+client := alphavintage.NewClient("YOUR_KEY")
+
+// Get intraday data (5-minute intervals)
+intraday, _ := client.GetTimeSeriesIntraday("IBM", alphavintage.Interval5Min, alphavintage.OutputSizeFull)
+
+// Filter for a specific date
+filtered := alphavintage.FilterIntradayByDate(intraday, "2024-12-16")
+
+// Or use the helper (fetch + filter combined)
+singleDay, _ := client.GetSingleDayData("IBM", "2024-12-16", alphavintage.Interval5Min)
+
+// Get summary statistics
+summary, _ := alphavintage.GetIntradaySummary(filtered)
+fmt.Printf("Open: $%.2f, High: $%.2f, Low: $%.2f, Close: $%.2f\n",
+    summary.Open, summary.High, summary.Low, summary.Close)
+
+// Generate intraday chart
+alphavintage.GenerateIntradayChartToFile(filtered, "intraday.png", alphavintage.ChartOptions{
+    Title:      "IBM Intraday",
+    ShowVolume: true,
+})
+
+// Add to PDF report
+report := alphavintage.NewReportBuilder(alphavintage.DefaultReportOptions())
+report.AddPage()
+report.AddHeading("Intraday Analysis")
+report.AddIntradaySummary(summary)
+report.AddIntradayChart(filtered, alphavintage.ChartOptions{})
+report.Save("intraday_report.pdf")
+```
+
+**Available Intervals:** `Interval1Min`, `Interval5Min`, `Interval15Min`, `Interval30Min`, `Interval60Min`
+
+**Note:** Alpha Vantage intraday is a PREMIUM endpoint. Free tier only supports daily data.
+
+## Date Range Filtering (FREE Tier)
+
+Filter daily data by date range without additional API calls:
+
+```go
+client := alphavintage.NewClient("YOUR_KEY")
+
+// Fetch daily data once
+daily, _ := client.GetTimeSeriesDaily("IBM", alphavintage.OutputSizeFull)
+
+// Get date range info
+oldest := alphavintage.GetOldestDate(daily)
+newest := alphavintage.GetMostRecentDate(daily)
+
+// Filter last N trading days
+last5 := alphavintage.FilterDailyLastNDays(daily, 5)
+last30 := alphavintage.FilterDailyLastNDays(daily, 30)
+
+// Filter by specific date range
+dec2025 := alphavintage.FilterDailyByDateRange(daily, "2025-12-01", "2025-12-31")
+ytd := alphavintage.FilterDailyByDateRange(daily, "2025-01-01", "")  // empty = no limit
+
+// Get single day data
+point, ok := alphavintage.GetDailyDataPoint(daily, "2025-12-15")
+
+// Get summary statistics for any filtered data
+summary, _ := alphavintage.GetDailyRangeSummary(last30)
+fmt.Printf("Period: %s to %s\n", summary.StartDate, summary.EndDate)
+fmt.Printf("High: $%.2f on %s\n", summary.PeriodHigh, summary.HighDate)
+fmt.Printf("Low: $%.2f on %s\n", summary.PeriodLow, summary.LowDate)
+fmt.Printf("Change: %.2f%%\n", summary.PriceChangePct)
+
+// Generate chart for filtered data
+alphavintage.GenerateDailyPriceChartToFile(last30, "last30.png", alphavintage.ChartOptions{})
+
+// Add to PDF
+report := alphavintage.NewReportBuilder(alphavintage.DefaultReportOptions())
+report.AddPage()
+report.AddHeading("Last 30 Days Analysis")
+report.AddDailyRangeSummary(summary)
+report.AddDailyPriceChart(last30, alphavintage.ChartOptions{})
+report.Save("report.pdf")
+```
+
+**Date Range Functions:**
+- `FilterDailyByDateRange(data, startDate, endDate)` - Filter by date range
+- `FilterDailyLastNDays(data, n)` - Get last N trading days
+- `GetDailyDataPoint(data, date)` - Get single day
+- `GetDailyRangeSummary(data)` - Calculate period statistics
+- `GetSortedDates(data)` - Get all dates sorted
+- `GetMostRecentDate(data)` / `GetOldestDate(data)` - Get boundary dates
 
 ## AI-Powered Analysis
 
